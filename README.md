@@ -99,13 +99,15 @@ python 05_visualization/regenerate_transcriptome_figs_en.py
 
 | Analysis | Metric | Value |
 |---|---|---|
-| MIND localization (overall) | AUC | 0.702 (95% CI: 0.685-0.717) |
-| MIND localization (HS subgroup) | AUC | 0.766 |
-| MIND patient-level accuracy | % | 85.1% |
-| MIND top feature (neg. connection strength) | Cohen's d | -0.64 |
-| MIND in DTI subsample (n=191) | AUC | 0.680 |
-| DTI localization (overall, n=87) | AUC | 0.627 |
-| DTI localization (HS subgroup) | AUC | 0.700 |
+| MIND localization (overall, n=442) | AUC | 0.750 (95% CI: 0.739-0.761) |
+| MIND localization (HS subgroup, n=215) | AUC | 0.765 |
+| MIND localization (OTHER subgroup, n=74) | AUC | 0.691 |
+| MIND patient-level accuracy | % | 86.8% (362/417) |
+| MIND top feature (closeness centrality) | Cohen's d (within-subject) | -1.05 |
+| MIND in DTI subsample (n=191) | AUC | 0.733 |
+| DTI localization (overall, n=87) | AUC | 0.707 (95% CI: 0.684-0.730) |
+| DTI patient-level accuracy | % | 81.9% (68/83) |
+| DTI top feature (eigenvector centrality) | Cohen's d (within-subject) | -0.526 |
 | Transcriptomic genes (FDR < 0.05) | Count | 1,571 |
 | Clustering stability (bootstrap ARI) | - | 0.909 |
 | Top GO enrichment | Chemical synaptic transmission | FDR = 1.17×10⁻⁴ |
@@ -115,27 +117,41 @@ python 05_visualization/regenerate_transcriptome_figs_en.py
 
 This study employs a **simplified region-level MIND** approach (Pearson correlation of region-level aggregated features: cortical thickness, volume, surface area) rather than the strict vertex-level morphometric distribution divergence (MIND) method proposed by Kong et al. (2018). The simplified approach was chosen for computational efficiency and reproducibility across multicenter retrospective data. This limitation is acknowledged in the manuscript.
 
-## Code Revisions (v2)
+**Resection threshold**: Regions with >10% overlap with the surgical resection mask are defined as "resected" (epileptogenic zone proxy), following established conventions in epilepsy surgery imaging research. This threshold balances sensitivity against noise from incidental surgical corridor overlap.
 
-The following methodological corrections were applied after independent code review:
+## Code Revisions
+
+### v3 (10% threshold + DTI corrections)
+
+1. **Resection threshold changed from >0 to >10%**: The original >0% definition included regions with only incidental overlap with the surgical access corridor, introducing noise. Changed to >10% following epilepsy surgery imaging conventions. This improved overall MIND AUC from 0.702 to 0.750 and DTI AUC from 0.627 to 0.707.
+
+2. **DTI analysis corrections**:
+   - Switched from binarized to **weighted networks** (streamline counts) for all graph metrics
+   - Applied **distance transformation** (`distance = max - count`) for betweenness/closeness centrality
+   - Implemented **node-level local efficiency** manually (global efficiency of each node's neighbor subgraph), replacing the buggy `nx.local_efficiency()` call that returned a graph-level scalar
+   - Changed cross-validation from `StratifiedKFold` to **`GroupKFold` by subject** to prevent data leakage
+   - Expanded DTI features from 5 to 7 (added closeness centrality and local efficiency)
+   - Corrected Cohen's d formula with sample-size weighting
+
+3. **MIND feature expansion**: Added clustering coefficient, participation coefficient, within-module strength, and hemispheric strength features (14 features total).
+
+4. **Added bootstrap 95% CI** for all AUC estimates (1000 resamples).
+
+5. **Added FDR correction** for all multiple comparisons (Benjamini-Hochberg).
+
+### v2 (methodological corrections after independent code review)
 
 1. **Betweenness/closeness centrality weight direction** (critical bug fix): NetworkX's `betweenness_centrality(weight=)` and `closeness_centrality(distance=)` interpret edge weights as traversal cost (lower = shorter path). The original code passed raw similarity weights, inverting the direction of these measures. Fixed by constructing a distance matrix `distance = 1 - |similarity|` for these measures. Eigenvector centrality correctly uses similarity weights.
 
-2. **Removed `local_efficiency` feature**: `nx.local_efficiency()` returns a graph-level scalar, not a node-level dictionary. The original code's `try/except` silently set this feature to all zeros. Its feature importance was 0 in all analyses, so it was removed rather than reimplemented.
+2. **Corrected Cohen's d formula**: The original formula `sqrt((s1² + s2²)/2)` only applies to equal sample sizes. Replaced with sample-size-weighted pooled SD: `sqrt(((n1-1)s1² + (n2-1)s2²) / (n1+n2-2))`.
 
-3. **Corrected Cohen's d formula**: The original formula `sqrt((s1² + s2²)/2)` only applies to equal sample sizes. Replaced with sample-size-weighted pooled SD: `sqrt(((n1-1)s1² + (n2-1)s2²) / (n1+n2-2))`.
+3. **Added within-subject paired tests**: To address non-independence of regional nodes within patients, added patient-level paired tests (mean resected - mean non-resected per patient, one-sample t-test).
 
-4. **Added within-subject paired tests**: To address non-independence of regional nodes within patients, added patient-level paired tests (mean resected - mean non-resected per patient, one-sample t-test). All key findings confirmed at N=430 patient level.
+4. **Added patient-level classification evaluation**: Report proportion of patients with higher mean predicted probability in resected than non-resected regions.
 
-5. **Added patient-level classification evaluation**: Report proportion of patients with higher mean predicted probability in resected than non-resected regions (85.1%).
+5. **Unified random_state=42** across all classifiers.
 
-6. **Added data consistency assertions**: Hemisphere ordering checks (first 34 = lh_, last 34 = rh_), matrix dimension checks.
-
-7. **Unified random_state=42** across all classifiers (LogisticRegression, SVC, RandomForest).
-
-8. **Narrowed exception handling**: Replaced bare `except:` with `except Exception:` and warning messages.
-
-9. **All comments and docstrings converted to English**.
+6. **All comments and docstrings converted to English**.
 
 ## Citation
 
